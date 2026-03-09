@@ -1,0 +1,62 @@
+#!/bin/bash
+# ============================================================================
+# Frigate Intel GPU Stats Fix — Wrapper for intel_gpu_top
+# ============================================================================
+#
+# Fixes GPU stats showing 0% in Frigate NVR when:
+#   1. GPU appears as card1 instead of card0 (common in Proxmox LXC)
+#   2. Frigate's 0.5s timeout kills intel_gpu_top before real data arrives
+#
+# The Problem:
+#   Frigate runs: timeout 0.5s intel_gpu_top -J -o - -s 1000
+#   With -s 1000 (1 second sample interval), the first JSON output is always
+#   zeros (initialization). Real data only comes after 1000ms — but timeout
+#   kills the process at 500ms. Frigate only ever sees zeros.
+#
+# The Fix:
+#   - Override -s (sample interval) to 250ms so real data arrives within
+#     the 0.5s timeout window
+#   - Auto-detect GPU device or allow user override via environment variable
+#
+# Installation:
+#   See README.md for full instructions
+#
+# Environment Variables:
+#   GPU_DEVICE  — Override GPU device filter (default: auto-detect)
+#                 Examples: "pci:card=0", "drm:/dev/dri/renderD128"
+#
+# License: MIT
+# ============================================================================
+
+# Auto-detect GPU device if not set via environment
+if [ -z "$GPU_DEVICE" ]; then
+    # Try to find the correct device from intel_gpu_top -L output
+    # Format: "cardN  Description  pci:vendor=XXXX,device=XXXX,card=N"
+    DETECTED=$(intel_gpu_top.orig -L 2>/dev/null | grep -oP 'pci:vendor=\S+' | head -1)
+    if [ -n "$DETECTED" ]; then
+        GPU_DEVICE="$DETECTED"
+    fi
+fi
+
+# Build argument list, overriding -s to 250ms
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -s)
+            shift   # skip -s
+            shift   # skip the value (e.g., 1000)
+            ARGS+=("-s" "250")
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Execute original intel_gpu_top with device filter and faster sampling
+if [ -n "$GPU_DEVICE" ]; then
+    exec /usr/bin/intel_gpu_top.orig -d "$GPU_DEVICE" "${ARGS[@]}"
+else
+    exec /usr/bin/intel_gpu_top.orig "${ARGS[@]}"
+fi
