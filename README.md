@@ -145,38 +145,13 @@ Choose the correct driver for your CPU generation:
 
 If you're running Frigate in a Proxmox LXC container, make sure:
 
-### 1. GPU is passed through to the LXC
-
-In `/etc/pve/lxc/<CTID>.conf`:
-
-```
-lxc.cgroup2.devices.allow: c 226:0 rwm
-lxc.cgroup2.devices.allow: c 226:128 rwm
-lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
-```
-
-Or use Proxmox GUI: LXC → Resources → Device Passthrough.
-
-### 2. Permissions are set on the host
+### 1. Apply the fix inside the Frigate container
 
 ```bash
-# Temporary
-chmod 666 /dev/dri/renderD128
-
-# Permanent (survives reboot)
-cat > /etc/udev/rules.d/99-gpu-permissions.rules << 'EOF'
-KERNEL=="renderD128", MODE="0666"
-EOF
-```
-
-### 3. perf_event_paranoid is set on the host
-
-```bash
-# Temporary
-sh -c 'echo 0 > /proc/sys/kernel/perf_event_paranoid'
-
-# Permanent
-sh -c 'echo kernel.perf_event_paranoid=0 >> /etc/sysctl.d/local.conf'
+mv /usr/bin/intel_gpu_top /usr/bin/intel_gpu_top.orig
+wget -O /usr/bin/intel_gpu_top https://raw.githubusercontent.com/ahmetkipkip/frigate-intel-gpu-stats-fix-gen1-11/main/intel_gpu_top
+chmod +x /usr/bin/intel_gpu_top
+systemctl restart frigate
 ```
 
 ## Troubleshooting
